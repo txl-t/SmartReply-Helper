@@ -1,0 +1,20 @@
+{
+  "include": ["./src", "./types", "./src/types/global.d.ts"],
+  "exclude": ["./src/**/*.test.ts", "./src/**/*.spec.ts"],
+  "compilerOptions": {
+    "jsx": "react-jsx",
+    "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true,
+    "target": "ES2020",
+    "lib": ["ES2020", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "skipLibCheck": true,
+    "strictNullChecks": true,
+    "noEmit": true,
+    "types": ["node", "@tarojs/taro"],
+    "typeRoots": ["./node_modules/@types"],
+    "paths": {
+      "@/*": ["./src/*"]
+    }
+  }
+}

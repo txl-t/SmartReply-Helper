@@ -1,0 +1,227 @@
+import {Button, ScrollView, Text, Textarea, View} from '@tarojs/components'
+import Taro from '@tarojs/taro'
+import {useCallback, useMemo, useState} from 'react'
+import QuickTagGrid from '../../components/QuickTagGrid'
+import ReplyCard from '../../components/ReplyCard'
+import SceneTag from '../../components/SceneTag'
+import type {DailyRecommendation, QuickTag, ReplyItem, ReplyStyle, SceneType} from '../../types/reply'
+import {generateReplies, getDefaultReplies} from '../../utils/ai'
+import {detectScene, getQuickTags} from '../../utils/scene'
+import {saveHistory} from '../../utils/storage'
+
+export default function Home() {
+  const [input, setInput] = useState('')
+  const [scene, setScene] = useState<SceneType>('social')
+  const [replies, setReplies] = useState<ReplyItem[]>([])
+  const [loading, setLoading] = useState(false)
+  const [showReplies, setShowReplies] = useState(false)
+
+  // 每日推荐
+  const dailyRecommendations: DailyRecommendation[] = useMemo(
+    () => [
+      {
+        id: '1',
+        title: '职场沟通技巧',
+        content: '在职场中，及时反馈和清晰表达是建立良好沟通的关键。',
+        scene: 'work'
+      },
+      {
+        id: '2',
+        title: '情感表达要点',
+        content: '真诚和共情是情感沟通的基础，学会倾听比表达更重要。',
+        scene: 'emotion'
+      },
+      {
+        id: '3',
+        title: '社交礼仪提醒',
+        content: '礼貌和尊重是社交的基本原则，适当的赞美能拉近距离。',
+        scene: 'social'
+      }
+    ],
+    []
+  )
+
+  // 快捷标签
+  const quickTags = useMemo(() => getQuickTags(), [])
+
+  // 检测场景
+  const handleInputChange = useCallback((value: string) => {
+    setInput(value)
+    if (value.trim()) {
+      const detectedScene = detectScene(value)
+      setScene(detectedScene)
+    }
+  }, [])
+
+  // 生成回复
+  const handleGenerate = useCallback(async () => {
+    if (!input.trim()) {
+      Taro.showToast({
+        title: '请输入内容',
+        icon: 'none'
+      })
+      return
+    }
+
+    setLoading(true)
+    setShowReplies(false)
+    setReplies([])
+
+    try {
+      const generatedReplies = await generateReplies(
+        input,
+        scene,
+        undefined,
+        undefined,
+        (style: ReplyStyle, content: string) => {
+          // 实时更新回复内容
+          setReplies((prev) => {
+            const existing = prev.find((r) => r.style === style)
+            if (existing) {
+              return prev.map((r) => (r.style === style ? {...r, content} : r))
+            } else {
+              return [...prev, {id: `${style}_${Date.now()}`, style, content}]
+            }
+          })
+          setShowReplies(true)
+        }
+      )
+
+      setReplies(generatedReplies)
+      setShowReplies(true)
+
+      // 保存到历史记录
+      saveHistory({
+        id: `history_${Date.now()}`,
+        input,
+        scene,
+        replies: generatedReplies,
+        timestamp: Date.now(),
+        isFavorite: false
+      })
+
+      Taro.showToast({
+        title: '生成成功',
+        icon: 'success',
+        duration: 1500
+      })
+    } catch (error) {
+      console.error('生成失败:', error)
+
+      // 使用兜底回复
+      const defaultReplies = getDefaultReplies(scene)
+      setReplies(defaultReplies)
+      setShowReplies(true)
+
+      Taro.showToast({
+        title: '网络开小差了，已使用默认回复',
+        icon: 'none',
+        duration: 2000
+      })
+    } finally {
+      setLoading(false)
+    }
+  }, [input, scene])
+
+  // 快捷标签点击
+  const handleTagClick = useCallback((tag: QuickTag) => {
+    setInput(tag.prompt)
+    setScene(tag.scene)
+  }, [])
+
+  return (
+    <View className="min-h-screen bg-gradient-bg">
+      <ScrollView scrollY className="h-screen" style={{background: 'transparent'}}>
+        <View className="p-4 pb-24">
+          {/* 头部 */}
+          <View className="mb-6">
+            <Text className="text-3xl font-bold gradient-text block mb-2">智能回复助手</Text>
+            <Text className="text-sm text-muted-foreground block">让沟通更轻松，让表达更得体</Text>
+          </View>
+
+          {/* 每日推荐 */}
+          <View className="mb-6">
+            <View className="flex items-center gap-2 mb-3">
+              <View className="i-mdi-lightbulb text-xl text-warning" />
+              <Text className="text-base font-semibold text-foreground break-keep">每日推荐</Text>
+            </View>
+            <ScrollView scrollX className="whitespace-nowrap">
+              <View className="flex gap-3">
+                {dailyRecommendations.map((rec) => (
+                  <View
+                    key={rec.id}
+                    className="inline-block bg-card rounded-xl p-4 shadow-elegant-sm"
+                    style={{width: '280px'}}>
+                    <View className="flex items-center gap-2 mb-2">
+                      <SceneTag scene={rec.scene} size="sm" />
+                    </View>
+                    <Text className="text-sm font-medium text-foreground block mb-1 break-keep">{rec.title}</Text>
+                    <Text className="text-xs text-muted-foreground block">{rec.content}</Text>
+                  </View>
+                ))}
+              </View>
+            </ScrollView>
+          </View>
+
+          {/* 输入区域 */}
+          <View className="mb-6">
+            <View className="flex items-center gap-2 mb-3">
+              <View className="i-mdi-message-text text-xl text-primary" />
+              <Text className="text-base font-semibold text-foreground break-keep">输入内容</Text>
+            </View>
+            <View className="bg-card rounded-xl border border-border p-3 mb-3">
+              <Textarea
+                className="w-full text-foreground text-base"
+                style={{padding: 0, border: 'none', background: 'transparent', minHeight: '120px'}}
+                placeholder="输入你想回复的内容..."
+                placeholderClass="text-muted-foreground"
+                value={input}
+                onInput={(e) => handleInputChange(e.detail.value)}
+                maxlength={500}
+              />
+            </View>
+            {input.trim() && (
+              <View className="flex items-center gap-2">
+                <View className="i-mdi-tag text-base text-primary" />
+                <Text className="text-sm text-muted-foreground break-keep mr-2">识别场景：</Text>
+                <SceneTag scene={scene} size="sm" />
+              </View>
+            )}
+          </View>
+
+          {/* 快捷标签 */}
+          <View className="mb-6">
+            <View className="flex items-center gap-2 mb-3">
+              <View className="i-mdi-flash text-xl text-accent" />
+              <Text className="text-base font-semibold text-foreground break-keep">快捷标签</Text>
+            </View>
+            <QuickTagGrid tags={quickTags} onTagClick={handleTagClick} />
+          </View>
+
+          {/* 生成按钮 */}
+          <Button
+            className="w-full bg-gradient-primary text-primary-foreground py-4 rounded-xl break-keep text-base font-semibold shadow-elegant-md"
+            size="default"
+            onClick={loading ? undefined : handleGenerate}>
+            {loading ? '生成中...' : '生成智能回复'}
+          </Button>
+
+          {/* 回复结果 */}
+          {showReplies && replies.length > 0 && (
+            <View className="mt-6">
+              <View className="flex items-center gap-2 mb-3">
+                <View className="i-mdi-check-circle text-xl text-success" />
+                <Text className="text-base font-semibold text-foreground break-keep">生成结果</Text>
+              </View>
+              <View className="flex flex-col gap-3">
+                {replies.map((reply) => (
+                  <ReplyCard key={reply.id} reply={reply} showCopy />
+                ))}
+              </View>
+            </View>
+          )}
+        </View>
+      </ScrollView>
+    </View>
+  )
+}
